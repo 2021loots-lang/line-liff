@@ -90,59 +90,27 @@
           document.getElementById('avatar-fallback').classList.add('hidden');
         }
         
-        // 🚀 關鍵改裝：手動加上參數防止瀏覽器快取，並告訴瀏覽器我們要跟隨重導向
-        const targetUrl = `${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}&_=${new Date().getTime()}`;
+        // 🚀 最簡單防 CORS 機制：直接註冊全域接收函式
+        window.handleGasResponse = function(data) {
+          console.log("成功收到資料：", data);
+          renderOrders(data); // 呼叫原本繪製畫面的函式
+        };
+
+        // 🚀 直接用建立 script 的方式，繞過所有瀏覽器 Fetch 限制
+        const script = document.createElement('script');
+        script.src = `${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}&callback=handleGasResponse&_=${new Date().getTime()}`;
         
-        // 🌟 使用最純粹的 fetch，不加任何自訂 headers（自訂 headers 會觸發 OPTIONS 預檢，導致 CORS 失敗）
-        fetch(targetUrl, {
-          method: 'GET',
-          redirect: 'follow' // 👈 強制瀏覽器自動跟隨 Google 內部的 302 重導向
-        })
-          .then(response => {
-            // 如果 response.redirected 是 true，代表它已經順利跳轉並拿到最後的資料了
-            if (!response.ok) {
-              throw new Error("網路回應錯誤");
-            }
-            return response.json();
-          })
-          .then(data => {
-            console.log("成功拿到訂單資料了！", data);
-            renderOrders(data);
-          })
-          .catch(err => {
-            console.error("API 請求失敗，改採 JSONP 備用方案:", err);
-            // 💡 萬一標準 Fetch 還是被某些瀏覽器擋，啟用終極備用方案 (JSONP 繞過法)
-            tryJsonpFallback(profile.userId);
-          });
+        script.onerror = function() {
+          console.error("載入失敗");
+          handleError();
+        };
+
+        document.body.appendChild(script);
           
       }).catch(err => {
         console.error("取得使用者資訊失敗", err);
         handleError();
       });
-    }
-
-    // 🌟【終極備用方案：JSONP 注入法】 
-    // 這是一個 100% 免疫 CORS 的做法，因為 <script> 標籤不受同源政策限制！
-    function tryJsonpFallback(uid) {
-      // 在全域註冊一個接收資料的回呼函式
-      window.handleGasResponse = function(data) {
-        renderOrders(data);
-        // 清理 script 標籤
-        const oldScript = document.getElementById('jsonp-script');
-        if (oldScript) oldScript.remove();
-      };
-
-      // 建立一個 script 標籤，並直接指向您的 GAS (加上 callback 參數)
-      const script = document.createElement('script');
-      script.id = 'jsonp-script';
-      script.src = `${GAS_API_URL}?uid=${encodeURIComponent(uid)}&callback=handleGasResponse&_=${new Date().getTime()}`;
-      
-      // 萬一載入失敗的處理
-      script.onerror = function() {
-        handleError();
-      };
-
-      document.body.appendChild(script);
     }
 
     function renderOrders(orders) {
