@@ -78,40 +78,44 @@
     }
 
     function getProfileAndOrders() {
-      liff.getProfile().then(profile => {
-        // 設定顧客名字
-        document.getElementById('user-name').innerText = profile.displayName;
-        
-        // 處理大頭貼
-        if (profile.pictureUrl) {
-          const img = document.getElementById('user-avatar');
-          img.src = profile.pictureUrl;
-          img.classList.remove('hidden');
-          document.getElementById('avatar-fallback').classList.add('hidden');
-        }
-        
-        // 🚀 最簡單防 CORS 機制：直接註冊全域接收函式
-        window.handleGasResponse = function(data) {
-          console.log("成功收到資料：", data);
-          renderOrders(data); // 呼叫原本繪製畫面的函式
-        };
-
-        // 🚀 直接用建立 script 的方式，繞過所有瀏覽器 Fetch 限制
-        const script = document.createElement('script');
-        script.src = `${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}&callback=handleGasResponse&_=${new Date().getTime()}`;
-        
-        script.onerror = function() {
-          console.error("載入失敗");
-          handleError();
-        };
-
-        document.body.appendChild(script);
-          
-      }).catch(err => {
-        console.error("取得使用者資訊失敗", err);
-        handleError();
-      });
+  liff.getProfile().then(profile => {
+    document.getElementById('user-name').innerText = profile.displayName;
+    if (profile.pictureUrl) {
+      document.getElementById('user-avatar').src = profile.pictureUrl;
     }
+
+    // 使用傳統 XHR (XMLHttpRequest) 請求
+    const xhr = new XMLHttpRequest();
+    const url = `${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}&_=${new Date().getTime()}`;
+    
+    xhr.open("GET", url, true);
+    
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          renderOrders(data);
+        } catch (e) {
+          console.error("JSON 解析錯誤", e);
+          handleError();
+        }
+      } else {
+        console.error("HTTP 錯誤", xhr.status);
+        handleError();
+      }
+    };
+    
+    xhr.onerror = function() {
+      console.error("網路請求徹底失敗");
+      handleError();
+    };
+    
+    xhr.send();
+  }).catch(err => {
+    console.error("LINE 取得設定檔失敗", err);
+    handleError();
+  });
+}
 
     function renderOrders(orders) {
       document.getElementById('loading').classList.add('hidden');
