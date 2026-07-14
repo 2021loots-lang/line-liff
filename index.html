@@ -90,15 +90,39 @@
           document.getElementById('avatar-fallback').classList.add('hidden');
         }
         
-        // 向 GAS API 請求資料 (帶入顧客的 LINE UID)
-        fetch(`${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}`)
-          .then(response => response.json())
+        // 🚀【修正 CORS 的 Fetch 寫法】
+        // 我們改用更安全的 URL 串接，並在網址最後加上無痛參數避開緩存
+        const targetUrl = `${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}&t=${new Date().getTime()}`;
+        
+        fetch(targetUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "text/plain" // 改用 text/plain 可以繞過預檢請求 (Preflight)
+          },
+          mode: "cors" // 強制瀏覽器開啟跨域模式
+        })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("網路回應不成功");
+            }
+            return response.json();
+          })
           .then(data => {
             renderOrders(data);
           })
           .catch(err => {
-            console.error("API 請求失敗", err);
-            handleError();
+            console.error("API 請求失敗，嘗試使用替代代理", err);
+            // 備用方案：如果還是被擋，使用免費跨域代理服務
+            fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`)
+              .then(res => res.json())
+              .then(proxyData => {
+                const realData = JSON.parse(proxyData.contents);
+                renderOrders(realData);
+              })
+              .catch(proxyErr => {
+                console.error("代理也失敗了", proxyErr);
+                handleError();
+              });
           });
           
       }).catch(err => {
