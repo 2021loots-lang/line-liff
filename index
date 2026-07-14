@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>我的訂單查詢</title>
+  <!-- Tailwind CSS 手機版美化 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- 圖示庫 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    body {
+      background-color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body class="p-4 max-w-md mx-auto">
+
+  <!-- 頂部用戶資訊 -->
+  <div class="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg mb-6">
+    <div class="flex items-center space-x-4">
+      <!-- 預設顯示精美頭像，防破圖設計 -->
+      <div class="relative w-12 h-12 flex-shrink-0">
+        <img id="user-avatar" class="w-12 h-12 rounded-full border-2 border-white shadow hidden" src="" alt="Avatar">
+        <div id="avatar-fallback" class="w-12 h-12 rounded-full border-2 border-white shadow bg-emerald-700 flex items-center justify-center text-xl font-bold">
+          👤
+        </div>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold">您好，<span id="user-name">顧客</span></h1>
+        <p class="text-xs text-emerald-100">以下是您最新的訂單出貨進度</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 載入中動畫 -->
+  <div id="loading" class="flex flex-col items-center justify-center py-12">
+    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mb-2"></div>
+    <p class="text-gray-500 text-sm">正在安全撈取您的訂單資料...</p>
+  </div>
+
+  <!-- 查無訂單 -->
+  <div id="no-orders" class="hidden text-center py-12 px-6">
+    <div class="text-gray-300 text-6xl mb-4"><i class="fa-regular fa-folder-open"></i></div>
+    <h3 class="text-gray-700 font-semibold text-lg">目前尚無訂單記錄</h3>
+    <p class="text-gray-400 text-sm mt-2">如果您剛完成下單，資料可能需要幾分鐘同步，或請直接聯絡客服確認。</p>
+  </div>
+
+  <!-- 訂單列表容器 -->
+  <div id="order-list" class="space-y-4 mb-8"></div>
+
+  <script>
+    // 已幫您填入您的 LIFF ID
+    const LIFF_ID = "2010696066-nTWgPXRZ"; 
+    
+    // 💡 請更換為您在【步驟 1】重新部署後取得的 GAS 網頁應用程式 URL (網址最後通常是 /exec)
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwxSQjS9pgXLfzbfVTuWeFer-RomBRR032v4ULSJ0vSqbS34JrsPeyvr81FwZFImZ8_Eg/exec"; 
+
+    document.addEventListener("DOMContentLoaded", function() {
+      initLiff();
+    });
+
+    function initLiff() {
+      liff.init({ liffId: LIFF_ID })
+        .then(() => {
+          if (!liff.isLoggedIn()) {
+            liff.login();
+          } else {
+            getProfileAndOrders();
+          }
+        })
+        .catch((err) => {
+          console.error("LIFF 初始化失敗", err);
+          document.getElementById('loading').innerHTML = `<p class="text-red-500 text-sm text-center">請在 LINE App 內開啟此網頁</p>`;
+        });
+    }
+
+    function getProfileAndOrders() {
+      liff.getProfile().then(profile => {
+        // 設定顧客名字
+        document.getElementById('user-name').innerText = profile.displayName;
+        
+        // 處理大頭貼：如果有取得，就蓋過預設頭像
+        if (profile.pictureUrl) {
+          const img = document.getElementById('user-avatar');
+          img.src = profile.pictureUrl;
+          img.classList.remove('hidden');
+          document.getElementById('avatar-fallback').classList.add('hidden');
+        }
+        
+        // 向 GAS API 請求資料 (帶入顧客的 LINE UID)
+        fetch(`${GAS_API_URL}?uid=${encodeURIComponent(profile.userId)}`)
+          .then(response => response.json())
+          .then(data => {
+            renderOrders(data);
+          })
+          .catch(err => {
+            console.error("API 請求失敗", err);
+            handleError();
+          });
+          
+      }).catch(err => {
+        console.error("取得使用者資訊失敗", err);
+        handleError();
+      });
+    }
+
+    function renderOrders(orders) {
+      document.getElementById('loading').classList.add('hidden');
+      
+      if (!orders || orders.length === 0) {
+        document.getElementById('no-orders').classList.remove('hidden');
+        return;
+      }
+
+      const listContainer = document.getElementById('order-list');
+      listContainer.innerHTML = '';
+
+      orders.forEach(order => {
+        let statusBadge = '';
+        if (order.status === '已出貨') {
+          statusBadge = '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">已出貨</span>';
+        } else if (order.status === '製作中') {
+          statusBadge = '<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">製作中</span>';
+        } else {
+          statusBadge = `<span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">${order.status || '備貨中'}</span>`;
+        }
+
+        const isMyship = order.orderId.includes('賣貨便') || order.orderId.toLowerCase().includes('myship');
+        const isLockedStatus = (order.status === '製作中' || order.status === '已出貨');
+        const canModify = !isMyship && !isLockedStatus;
+
+        const formattedDetails = order.details.replace(/\n/g, '<br>');
+
+        let actionButtonHtml = '';
+        if (canModify) {
+          actionButtonHtml = `
+            <button onclick="requestModify('${order.orderId}')" class="w-full mt-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] transition text-white py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center space-x-2 shadow-md">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>💡 需要修改資料？點此聯絡客服人工變更</span>
+            </button>
+          `;
+        } else {
+          let reason = '';
+          if (isMyship) reason = '⚠️ 賣貨便訂單不支援手動變更';
+          else if (isLockedStatus) reason = `⚠️ 訂單已進入【${order.status}】階段，無法修改`;
+          
+          actionButtonHtml = `
+            <div class="w-full mt-4 bg-gray-100 border border-gray-200 text-gray-500 py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-circle-info text-gray-400"></i>
+              <span>${reason}</span>
+            </div>
+          `;
+        }
+
+        const card = `
+          <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100 transition-all">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-100">
+              <div>
+                <p class="text-xs text-gray-400 font-medium">訂單單號</p>
+                <p class="text-sm font-bold text-gray-800">${order.orderId}</p>
+              </div>
+              <div>
+                ${statusBadge}
+              </div>
+            </div>
+
+            <div class="py-4 space-y-3">
+              <div class="flex justify-between text-xs">
+                <span class="text-gray-400">訂購日期：</span>
+                <span class="text-gray-700 font-medium">${order.date}</span>
+              </div>
+              <div class="text-xs">
+                <span class="text-gray-400 block mb-1">訂購商品細節：</span>
+                <div class="bg-gray-50 p-3 rounded-lg text-gray-700 leading-relaxed max-h-32 overflow-y-auto">
+                  ${formattedDetails}
+                </div>
+              </div>
+              <div class="flex justify-between text-xs pt-2">
+                <span class="text-gray-400">訂單總額：</span>
+                <span class="text-emerald-600 font-bold text-sm">$${order.total}</span>
+              </div>
+            </div>
+
+            ${actionButtonHtml}
+          </div>
+        `;
+        listContainer.insertAdjacentHTML('beforeend', card);
+      });
+    }
+
+    function requestModify(orderId) {
+      const textToSend = `【申請修改訂單】單號：${orderId}，我想修改地址或電話，請客服幫忙處理！`;
+      
+      liff.sendMessages([
+        {
+          type: 'text',
+          text: textToSend
+        }
+      ]).then(() => {
+        liff.closeWindow(); 
+      }).catch((err) => {
+        console.error("發送失敗", err);
+        alert("發送失敗！請手動複製以下文字發送給客服：\n\n" + textToSend);
+      });
+    }
+
+    function handleError(err) {
+      console.error(err);
+      document.getElementById('loading').innerHTML = `
+        <div class="text-center py-6">
+          <p class="text-red-500 font-medium">資料載入失敗</p>
+          <p class="text-gray-400 text-xs mt-1">請稍後再試，或確認網路連線是否正常。</p>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>
