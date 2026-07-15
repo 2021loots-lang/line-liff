@@ -2,68 +2,128 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <title>我的訂單查詢</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <style>
-    body { background-color: #FDFBF7; color: #5D5B59; font-family: 'Helvetica', sans-serif; }
-    .card { background: #FFFFFF; border: 1px solid #EAE4DF; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-    .btn-soft { background-color: #D8D2C9; color: #4A4A4A; }
-    .btn-submit { background-color: #B8C5B8; color: white; }
+    body { background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   </style>
 </head>
-<body class="p-6">
-  <div class="max-w-md mx-auto">
-    <h2 class="text-xl font-bold text-center mb-6">訂單查詢</h2>
-    
-    <!-- 搜尋區 -->
-    <div class="flex gap-2 mb-8">
-      <input id="userName" type="text" placeholder="請輸入姓名" class="flex-1 p-3 rounded-xl border border-gray-200 outline-none">
-      <button onclick="fetchOrders()" class="px-6 py-3 btn-soft rounded-xl font-bold">查詢</button>
-    </div>
+<body class="p-4 max-w-md mx-auto">
 
-    <!-- 結果清單 -->
-    <div id="orderList" class="space-y-4"></div>
+  <!-- 頂部用戶資訊 -->
+  <div class="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg mb-6">
+    <div class="flex items-center space-x-4">
+      <img id="user-avatar" class="w-12 h-12 rounded-full border-2 border-white shadow" src="https://via.placeholder.com/150" alt="Avatar">
+      <div>
+        <h1 class="text-lg font-bold">您好，<span id="user-name">顧客</span></h1>
+        <p class="text-xs text-emerald-100">請輸入姓名查詢您的訂單</p>
+      </div>
+    </div>
   </div>
 
+  <!-- 🔍 姓名搜尋區 -->
+  <div class="flex gap-2 mb-6">
+    <input id="search-input" type="text" placeholder="請輸入姓名" class="flex-1 p-3 rounded-xl border border-gray-200 outline-none shadow-sm">
+    <button onclick="handleSearch()" class="px-6 bg-emerald-600 text-white rounded-xl font-bold shadow-md hover:bg-emerald-700 transition">查詢</button>
+  </div>
+
+  <!-- 載入中動畫 -->
+  <div id="loading" class="hidden flex flex-col items-center justify-center py-12">
+    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mb-2"></div>
+    <p class="text-gray-500 text-sm">正在讀取資料...</p>
+  </div>
+
+  <!-- 查無訂單 -->
+  <div id="no-orders" class="hidden text-center py-12 px-6">
+    <div class="text-gray-300 text-6xl mb-4"><i class="fa-regular fa-folder-open"></i></div>
+    <h3 class="text-gray-700 font-semibold text-lg">找不到相關訂單</h3>
+    <p class="text-gray-400 text-sm mt-2">請確認姓名是否正確，或聯絡客服。</p>
+  </div>
+
+  <!-- 訂單列表 -->
+  <div id="order-list" class="space-y-4 mb-8"></div>
+
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbwxSQjS9pgXLfzbfVTuWeFer-RomBRR032v4ULSJ0vSqbS34JrsPeyvr81FwZFImZ8_Eg/exec";
+    // 💡 注意：LIFF_ID 只需要填寫後面的字串，不需要前面的網址
+    const LIFF_ID = "2010696066-nTWgPXRZ"; 
 
-    liff.init({ liffId: "2010696066-nTWgPXRZ" });
+    document.addEventListener("DOMContentLoaded", function() {
+      liff.init({ liffId: LIFF_ID }).then(() => {
+        if (liff.isLoggedIn()) {
+          const profile = liff.getProfile().then(p => {
+             document.getElementById('user-avatar').src = p.pictureUrl || 'https://via.placeholder.com/150';
+             document.getElementById('user-name').innerText = p.displayName;
+          });
+        }
+      });
+    });
 
-    function fetchOrders() {
-      const name = document.getElementById('userName').value;
-      fetch(`${GAS_URL}?name=${encodeURIComponent(name)}`)
-        .then(res => res.json())
-        .then(data => render(data))
-        .catch(err => alert("查無資料或發生錯誤"));
+    // 觸發搜尋
+    function handleSearch() {
+      const name = document.getElementById('search-input').value.trim();
+      if (!name) return alert("請輸入姓名！");
+      
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('order-list').innerHTML = '';
+      document.getElementById('no-orders').classList.add('hidden');
+
+      // 呼叫 GAS 的 searchOrdersByName 函式
+      google.script.run
+        .withSuccessHandler(renderOrders)
+        .withFailureHandler(handleError)
+        .searchOrdersByName(name);
     }
 
-    function render(data) {
-      const list = document.getElementById('orderList');
-      list.innerHTML = data.map(item => `
-        <div class="card p-5">
-          <p class="text-sm text-gray-400">訂單編號: ${item.orderId}</p>
-          <h3 class="text-lg font-bold my-2">${item.items}</h3>
-          <p class="text-sm">金額: ${item.amount}</p>
-          <p class="font-bold text-green-700 my-2">狀態: ${item.status}</p>
-          ${(item.status === '訂單確認中' || item.status === '製作中') && !item.items.includes('賣貨便') 
-            ? `<button onclick="openModal('${item.orderId}')" class="w-full mt-3 py-2 btn-submit rounded-lg text-sm">需要修改訂單</button>` 
-            : ''}
-        </div>
-      `).join('');
-    }
-
-    function openModal(orderId) {
-      const note = prompt("請輸入您的修改需求 (例: 改成加大、刪除某個商品)：");
-      if (note) {
-        liff.sendMessages([{
-          type: 'text',
-          text: `【修改訂單通知】\n訂單編號: ${orderId}\n顧客需求: ${note}`
-        }]).then(() => {
-          alert("修改需求已送出，賣家確認後會與您聯繫！");
-        });
+    function renderOrders(orders) {
+      document.getElementById('loading').classList.add('hidden');
+      
+      if (!orders || orders.length === 0) {
+        document.getElementById('no-orders').classList.remove('hidden');
+        return;
       }
+
+      const listContainer = document.getElementById('order-list');
+      orders.forEach(order => {
+        // 核心邏輯：狀態包含「訂單確認中」或「製作中」即可修改
+        const statusStr = String(order.status);
+        const canModify = statusStr.includes('訂單確認中') || statusStr.includes('製作中');
+        
+        const card = `
+          <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100">
+            <div class="flex justify-between items-center mb-3">
+              <span class="text-xs text-gray-400 font-bold">單號: ${order.orderId}</span>
+              <span class="px-2 py-1 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100">${order.status}</span>
+            </div>
+            <div class="space-y-2 text-sm text-gray-700">
+              <p><b>商品:</b> ${order.items}</p>
+              <p><b>金額:</b> ${order.amount}</p>
+            </div>
+            ${canModify ? `
+              <button onclick="requestModify('${order.orderId}')" class="w-full mt-4 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-xl font-bold text-sm shadow-sm">
+                <i class="fa-solid fa-pen-to-square mr-2"></i>我要修改訂單
+              </button>
+            ` : ''}
+          </div>
+        `;
+        listContainer.insertAdjacentHTML('beforeend', card);
+      });
+    }
+
+    function requestModify(orderId) {
+      const note = prompt("請輸入您的修改需求 (例如：刪除OO商品、改成加大)：");
+      if (!note) return;
+      
+      const textToSend = `【訂單修改申請】\n單號：${orderId}\n需求：${note}`;
+      liff.sendMessages([{ type: 'text', text: textToSend }])
+        .then(() => alert("修改需求已送出！"))
+        .catch(err => alert("發送失敗，請直接私訊客服。"));
+    }
+
+    function handleError(err) {
+      document.getElementById('loading').classList.add('hidden');
+      alert("系統忙碌中，請稍後再試。");
     }
   </script>
 </body>
